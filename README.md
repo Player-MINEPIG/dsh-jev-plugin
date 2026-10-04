@@ -77,6 +77,7 @@ Open **Settings → Plugins → Jev**.
 | TypeSafe (direct) | `https://api.typesafe.ai/v1/systemone` | `jev-latest` | `TYPESAFE_API_KEY` |
 | Vercel AI Gateway | `https://ai-gateway.vercel.sh/typesafe/v1/systemone` | `typesafe-ai/jev` | `AI_GATEWAY_API_KEY` |
 | Laya Studio | `https://api.laya.studio/v1/systemone` | *auto-routed* | `LAYA_API_KEY` |
+| OpenCode Zen | `https://opencode.ai/zen/v1/systemone` | `jev-1.13` | `OPENCODE_ZEN_API_KEY` |
 | Custom | your own URL | `jev-latest` | `JEV_API_KEY` |
 
 Each provider has its own key, so switching provider switches which credential is
