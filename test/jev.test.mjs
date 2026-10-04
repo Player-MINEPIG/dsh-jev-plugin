@@ -340,6 +340,39 @@ test('every provider declares a credential name and a URL (except custom)', () =
   }
 })
 
+// ------------------------------------------------------------- OpenCode Zen
+
+test('resolveEndpoint resolves opencode-zen to the Zen systemone contract', () => {
+  const endpoint = resolveEndpoint({ provider: 'opencode-zen' })
+  assert.equal(endpoint.error, undefined)
+  assert.equal(endpoint.url, 'https://opencode.ai/zen/v1/systemone')
+  assert.equal(endpoint.credential, 'OPENCODE_ZEN_API_KEY')
+  assert.equal(endpoint.model, 'jev-1.13', 'the paid checkpoint, not the free one')
+  // A model override can still pin another Zen checkpoint.
+  assert.equal(resolveEndpoint({ provider: 'opencode-zen', model: 'jev-1.13-free' }).model, 'jev-1.13-free')
+})
+
+test('callJev sends the Zen model in the body, not as a query param', async () => {
+  let seen
+  const fetchImpl = async (url, init) => {
+    seen = { url, init, body: JSON.parse(init.body) }
+    return new Response(JSON.stringify({ answers: {}, usage: {} }), { status: 200 })
+  }
+  const endpoint = resolveEndpoint({ provider: 'opencode-zen' })
+  await callJev({
+    url: endpoint.url,
+    model: endpoint.model,
+    apiKey: 'k',
+    state: 'hola',
+    questions: { q1: { type: 'noul', instructions: '¿ok?' } },
+    fetchImpl,
+  })
+  assert.equal(seen.url, 'https://opencode.ai/zen/v1/systemone')
+  assert.equal(seen.init.headers.authorization, 'Bearer k')
+  assert.equal(seen.body.model, 'jev-1.13')
+  assert.equal(seen.body.state, 'hola')
+})
+
 // ---------------------------------------------------------------- Laya Studio
 
 test('resolveEndpoint resolves laya-studio with its own model and price', () => {
