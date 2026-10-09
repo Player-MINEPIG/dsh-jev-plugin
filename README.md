@@ -1,3 +1,65 @@
+# Shared decision model service (fork 0.3.0)
+
+This fork adds `ctx.decisionModels.ask` to RaulLazaro's JEV plugin. The JEV tool,
+Settings connection probe and external plugins share that implementation. It
+supports both System One APIs and ordinary models already configured in DSH.
+For ordinary models it calls `ctx.llm.prepareCall` directly; DSH owns adapters,
+credentials and model connectivity. No agent or session is created for a call.
+
+```js
+export const inject = ['decisionModels']
+export async function apply(ctx) {
+  const result = await ctx.decisionModels.ask({
+    state: 'Background prepared by the caller',
+    questions: {
+      executor: { type: 'choice', instructions: 'Choose the suitable executor',
+        criteria: { local: 'Local workstation', remote: 'Remote worker' } },
+    },
+    // provider and model are optional overrides of configured defaults.
+  }, { signal: new AbortController().signal })
+  // result: { provider, model, answers, usage? }; failures reject the promise.
+  // The caller validates candidate membership and applies its own policy.
+}
+```
+
+The wire input is unchanged: `state` is a string; `questions` is a keyed map of
+`noul`, `choice` or `score` questions. Ordinary models receive the same data and
+are prompted for the same JSON answer shape. Type declarations ship in
+`lib/index.d.ts`. The service mounts without the `tools` service and cancels
+outstanding calls on unload. Timeout is a model-request timeout, not a task
+runtime budget. Retries stay within that timeout and honor cancellation.
+
+Configure `provider: native`, `nativeProvider: <DSH provider ID>` and
+`model: <DSH model ID>` to use ordinary models. Optional `reasoningEffort` and
+`maxOutputTokens` are forwarded to DSH. Provider profiles in `profiles` carry
+`id`, `name`, `provider`, `model` and optional endpoint, credential reference or
+native-provider fields. Passing a profile ID as `provider` selects it. Passing
+`model` overrides that selection. Settings → Plugins → Jev selects the default,
+configures provider fields and runs a probe; edit multiple profiles through the
+standard plugin configuration editor.
+
+Install a tarball built from this fork (the npm registry release remains the
+upstream package):
+
+```sh
+npm install --ignore-scripts
+npm test
+npm pack
+dsh plugin --profile web add /absolute/path/dsh-jev-plugin-0.3.0.tgz
+```
+
+Task state, request timing, business validation, fallback, routing, sessions,
+execution and interconnect remain the caller's responsibility. The call ledger
+records invocation usage only. Native-model charges follow the DSH provider's
+billing; the upstream JEV cost estimate does not price them.
+
+[Upstream attribution and pinned revision](UPSTREAM.md). The original MIT
+copyright and license are preserved. The documentation below describes the
+upstream plugin and its historical benchmarks; those benchmarks do not measure
+this fork's ordinary-model path.
+
+---
+
 # dsh-jev-plugin
 
 Ask [Jev](https://typesafe.ai), a System One decision model, typed questions from

@@ -333,6 +333,7 @@ test('isLoopbackRequest accepts only loopback peers', () => {
 
 test('every provider declares a credential name and a URL (except custom)', () => {
   for (const [id, provider] of Object.entries(PROVIDERS)) {
+    if (id === "native") continue
     assert.equal(provider.id, id)
     assert.ok(provider.credential.length > 0, `${id} needs a credential name`)
     assert.ok(provider.label.length > 0, `${id} needs a label`)

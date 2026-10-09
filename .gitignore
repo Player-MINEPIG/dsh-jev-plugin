@@ -19,3 +19,6 @@ Thumbs.db
 
 # Packed artifacts
 *.tgz
+
+# Local dependency symlink
+node_modules

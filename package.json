@@ -1,28 +1,31 @@
 {
   "name": "dsh-jev-plugin",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "description": "Ask Jev (TypeSafe System One) typed questions from DeepSeek Harness: batch judgements with probabilities, configured per user in Settings.",
   "type": "module",
-  "author": "Raúl Lázaro Sánchez (https://github.com/RaulLazaro)",
+  "author": "Ra\u00fal L\u00e1zaro S\u00e1nchez (https://github.com/RaulLazaro)",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/RaulLazaro/dsh-jev-plugin.git"
+    "url": "git+https://github.com/Player-MINEPIG/dsh-jev-plugin.git"
   },
-  "homepage": "https://github.com/RaulLazaro/dsh-jev-plugin#readme",
+  "homepage": "https://github.com/Player-MINEPIG/dsh-jev-plugin",
   "bugs": {
-    "url": "https://github.com/RaulLazaro/dsh-jev-plugin/issues"
+    "url": "https://github.com/Player-MINEPIG/dsh-jev-plugin/issues"
   },
   "main": "lib/index.js",
   "exports": {
-    ".": "./lib/index.js",
+    ".": {
+      "types": "./lib/index.d.ts",
+      "default": "./lib/index.js"
+    },
     "./client": "./lib/client.js",
     "./package.json": "./package.json"
   },
   "files": [
-    "lib/index.js",
-    "lib/client.js",
-    "lib/ledger.js",
-    "cordis.patch.yml"
+    "lib",
+    "cordis.patch.yml",
+    "LICENSE",
+    "UPSTREAM.md"
   ],
   "scripts": {
     "test": "node --test"
@@ -60,5 +63,10 @@
       ],
       "platform": "web"
     }
+  },
+  "types": "lib/index.d.ts",
+  "devDependencies": {
+    "@deepseek-ai/cordis": "4.0.4",
+    "@deepseek-ai/schemastery": "3.18.4"
   }
 }
