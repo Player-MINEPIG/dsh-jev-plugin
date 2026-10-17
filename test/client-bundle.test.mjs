@@ -97,6 +97,6 @@ test('JEV mounts an expanded page on the current settings section slot', () => {
     register(options, component) {registered = {options, component}; return () => {}},
   }});
   assert.equal(registered.options.id, 'jev');
-  assert.equal(registered.options.label, 'JEV');
+  assert.equal(registered.options.label, 'JEV 决策');
   assert.equal(registered.component().props.expanded, true);
 });

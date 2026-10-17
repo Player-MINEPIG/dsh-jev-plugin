@@ -22,3 +22,6 @@ Thumbs.db
 
 # Local dependency symlink
 node_modules
+
+# Local validation and private working notes
+.local/

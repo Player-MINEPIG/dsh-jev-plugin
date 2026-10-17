@@ -178,7 +178,7 @@ test('the daily call cap refuses before spending anything', async () => {
     await assert.rejects(
       toolWith(ledger, { dailyCallLimit: 2 })
         .execute({ state: 's', questions: { q: { type: 'noul', instructions: 'x' } } }),
-      /daily judgment cap is reached \(2\/2 calls today\)/,
+      /今日决策次数已达上限（2\/2 次）/,
     )
     assert.equal(called, 0, 'no request may leave after the cap is hit')
   } finally {
@@ -196,7 +196,7 @@ test('the daily token cap refuses before spending anything', async () => {
     await assert.rejects(
       toolWith(ledger, { dailyTokenLimit: 5_000 })
         .execute({ state: 's', questions: { q: { type: 'noul', instructions: 'x' } } }),
-      /daily token cap is reached \(5,000\/5,000 input tokens today\)/,
+      /今日输入 token 已达上限（5,000\/5,000）/,
     )
     assert.equal(called, 0)
   } finally {

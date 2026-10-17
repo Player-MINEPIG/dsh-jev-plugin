@@ -1,9 +1,9 @@
 {
   "name": "dsh-jev-plugin",
-  "version": "0.3.4",
-  "description": "Ask Jev (TypeSafe System One) typed questions from DeepSeek Harness: batch judgements with probabilities, configured per user in Settings.",
+  "version": "0.3.5",
+  "description": "为 DeepSeek Harness 提供共享结构化决策服务：中文设置、System One 端点与 DSH 普通模型，返回批量判断及完整选项概率。",
   "type": "module",
-  "author": "Ra\u00fal L\u00e1zaro S\u00e1nchez (https://github.com/RaulLazaro)",
+  "author": "Raúl Lázaro Sánchez (https://github.com/RaulLazaro)",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/Player-MINEPIG/dsh-jev-plugin.git"

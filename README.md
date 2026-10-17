@@ -1,318 +1,166 @@
-# Shared decision model service (fork 0.3.1)
+# Jev 共享决策服务（中文 fork）
 
-This fork adds `ctx.decisionModels.ask` to RaulLazaro's JEV plugin. The JEV tool,
-Settings connection probe and external plugins share that implementation. It
-supports both System One APIs and ordinary models already configured in DSH.
-For ordinary models it calls `ctx.llm.prepareCall` directly; DSH owns adapters,
-credentials and model connectivity. No agent or session is created for a call.
+此 fork 基于 [RaulLazaro/dsh-jev-plugin](https://github.com/RaulLazaro/dsh-jev-plugin)，保留 MIT 许可证和原作者署名。它提供 `jev` 工具、中文设置页和共享服务 `ctx.decisionModels.ask()`。任务系统、消息插件等调用方可以共享这里的配置，不必各自保存 URL 与密钥。
+
+相比原版，此 fork 增加共享服务、配置档案、DSH 普通模型调用、模型目录选择、推理强度选择、严格 JSON 解析、取消与卸载处理。本轮补齐中文界面与帮助，并校验完整的 `choice` 概率分布。具体基线见 [UPSTREAM.md](UPSTREAM.md)。
+
+## 配置调用方式
+
+打开 **设置 → JEV 决策**，选择以下一种方式。
+
+### 使用 System One 服务或统一路由
+
+1. 选择内置提供商，或选择“自定义 TypeSafe 兼容端点”。
+2. 自定义模式填写完整请求 URL，例如 `https://router.example/v1/systemone`。插件使用该地址，不追加路径。
+3. 填写路由支持的模型 ID。留空时使用提供商默认模型。
+4. 点击“保存密钥”。密钥保存在 DSH 凭据存储中，不写入 `settings.yaml`。
+5. 点击“保存设置”，再点击“测试连接”。测试会发起真实请求，并显示提供商、模型、耗时、用量和答案。
+
+对于已支持 `/v1/systemone` 的 yetone/magpie，直接使用 `custom` 配置。此插件不另建路由，也不把聊天接口当作 System One 接口。
+
+请求使用 `Authorization: Bearer <key>`，JSON 请求体为 `{model, state, questions}`，响应包含 `answers`。Laya 默认模型为空时省略 `model` 字段。
+
+| 提供商 ID | 请求 URL | 默认模型 | 凭据名称及同名环境变量 |
+| --- | --- | --- | --- |
+| `typesafe` | `https://api.typesafe.ai/v1/systemone` | `jev-latest` | `TYPESAFE_API_KEY` |
+| `vercel-gateway` | `https://ai-gateway.vercel.sh/typesafe/v1/systemone` | `typesafe-ai/jev` | `AI_GATEWAY_API_KEY` |
+| `laya-studio` | `https://api.laya.studio/v1/systemone` | 自动路由 | `LAYA_API_KEY` |
+| `opencode-zen` | `https://opencode.ai/zen/v1/systemone` | `jev-1.13` | `OPENCODE_ZEN_API_KEY` |
+| `custom` | 用户填写的完整地址 | `jev-latest` | `JEV_API_KEY` |
+| `native` | 由 DSH 提供商管理 | 用户从目录选择 | 由 DSH 模型设置管理 |
+
+切换提供商时分别解析对应凭据。保存密钥以界面当前所选提供商为目标，即使提供商设置尚未保存。密钥解析顺序为 DSH 凭据存储、旧版 `apiKey` 设置值、同名环境变量。不要在配置文件中新增明文密钥。
+
+内置提供商的限制仍然生效。例如 Laya 每次最多 32 个问题、每题最多 64 个选项，且可能截断较长输入。价格、上下文长度和模型可用性以提供商为准。各服务的概率和置信度算法可能不同，阈值不能直接沿用。
+
+### 使用普通 DSH 模型
+
+1. 选择“DSH 普通模型”。
+2. 从目录选择已注册的 DSH 提供商和模型。
+3. 按模型目录提供的选项设置推理强度，或保留提供商默认值。
+4. 保存设置并测试连接。
+
+该模式调用 `ctx.llm.prepareCall()`，复用 DSH 的适配器、连接与凭据。插件把同一份 `state` 和 `questions` 发送给普通模型，用提示词要求模型输出 `{answers:{问题ID:答案}}`，再通过与 System One 路径共用的校验器解析结果。不会创建 Agent、会话或执行工具，也不是手工填写 JSON 的编辑器。
+
+普通模型必须遵循 JSON 协议。模型输出解释、Markdown 代码围栏、重复字段、遗漏答案、不完整概率或截断响应时，调用失败。插件不会猜测缺失字段、补零、重归一化或静默切换模型。
+
+## 共享服务与工具
+
+依赖 `decisionModels` 服务即可复用默认配置。`jev` 工具和设置页连接测试也使用同一个服务。
 
 ```js
 export const inject = ['decisionModels']
+
 export async function apply(ctx) {
   const result = await ctx.decisionModels.ask({
-    state: 'Background prepared by the caller',
+    state: '新消息：感谢，问题已经解决。',
     questions: {
-      executor: { type: 'choice', instructions: 'Choose the suitable executor',
-        criteria: { local: 'Local workstation', remote: 'Remote worker' } },
+      reply: {
+        type: 'choice',
+        instructions: '选择下一步处理方式。',
+        criteria: {
+          ignore: '无需回复',
+          draft: '准备回复草稿',
+          human: '需要用户处理',
+        },
+      },
     },
-    // provider and model are optional overrides of configured defaults.
-  }, { signal: new AbortController().signal })
-  // result: { provider, model, answers, usage? }; failures reject the promise.
-  // The caller validates candidate membership and applies its own policy.
+  }, {signal: new AbortController().signal})
+  // result 为 {provider, model, answers, usage?}；失败时 Promise 拒绝。
+  // 调用方根据实际任务决定是否执行、重试或转人工处理。
 }
 ```
 
-The wire input is unchanged: `state` is a string; `questions` is a keyed map of
-`noul`, `choice` or `score` questions. Ordinary models receive the same data and
-are prompted for the same JSON answer shape. Type declarations ship in
-`lib/index.d.ts`. The service mounts without the `tools` service and cancels
-outstanding calls on unload. Timeout is a model-request timeout, not a task
-runtime budget. Retries stay within that timeout and honor cancellation.
+`provider`、`model` 和 `reasoningEffort` 可在请求中覆盖默认值。`provider` 也接受 `profiles` 中的档案 ID。`ctx.decisionModels.config()` 返回当前配置的副本，供调用方展示可用档案。类型声明位于 `lib/index.d.ts`。协议字段、服务标识、错误码、模型 ID 和用户自定义名称保留原值。
 
-Configure `provider: native`, `nativeProvider: <DSH provider ID>` and
-`model: <DSH model ID>` to use ordinary models. Optional `reasoningEffort` and
-`maxOutputTokens` are forwarded to DSH. Provider profiles in `profiles` carry
-`id`, `name`, `provider`, `model` and optional endpoint, credential reference or
-native-provider fields. Passing a profile ID as `provider` selects it. Passing
-`model` overrides that selection. For ordinary DSH models, the settings page offers registered provider and model choices with model-specific reasoning efforts. Settings → JEV selects the default,
-configures provider fields and runs a probe; edit multiple profiles through the
-standard plugin configuration editor.
+服务可在没有 `tools` 服务时挂载。每次调用支持 `AbortSignal`；超时或插件卸载会中止等待中的调用。普通模型路径禁用工具调用，使用 DSH 返回的文本块，不把推理块当作答案。
 
-Install a tarball built from this fork (the npm registry release remains the
-upstream package):
+## 答案格式与概率限制
+
+`state` 为非空字符串，`questions` 为以问题 ID 为键的对象。`instructions` 必须为非空字符串。`answers` 必须恰好对应所有问题 ID，每项 `type` 与原问题一致。
+
+| 类型 | 问题要求 | 答案 |
+| --- | --- | --- |
+| `noul` | `instructions`，可带 `criteria.true` 与 `criteria.false` | `{type:"noul",noul:0.8}`，`noul` 为 0..1 的有限数值 |
+| `choice` | `criteria` 为至少两个选项 ID 到描述的对象 | `{type:"choice",choice:"ignore",probabilities:{ignore:0.8,draft:0.15,human:0.05}}` |
+| `score` | `criteria` 为至少两个有序等级的数组 | `{type:"score",score:1.4,probabilities:{"0":0,"1":0.6,"2":0.4}}` |
+
+`choice` 必须属于给定选项。`probabilities` 必须包含全部且仅包含给定选项，值为 0..1 的有限数值，总和与 1 的差不超过 0.02。消息插件的 `ignore`、`draft`、`human` 三项必须全部出现。校验后原样返回概率，不补造或调整数值。
+
+`score` 为有限数值。普通模型提示词要求按从 0 开始的等级索引输出完整分布，并以索引的概率加权平均值作为 `score`。为兼容已有数值型 `score` 调用，公共校验保留其可选概率字段；如返回分布，则必须包含全部等级索引并通过相同概率校验。`confidence` 可选；若存在，必须为 0..1 的有限数值。`legend` 等附加字段保留。
+
+System One 路径的概率与 `confidence` 由远端服务提供，插件不会重新计算。**普通模型路径中的 `probabilities`、`noul` 与 `confidence` 是模型根据提示词生成的自报估计，不是真实 token 概率，也不是经过校准的置信度。** 两种路径字段相同不代表统计含义、准确率、成本或延迟相同。
+
+本插件只验证结构和数值范围，不保证判断正确。调用方负责业务规则、阈值验证、授权、降级策略及执行。给每个条目稳定标签，每题提出一个明确问题；精确匹配和算术应由代码完成。专用服务的指令语言限制由服务决定。
+
+## 配置参考
+
+配置命名空间为 `jev`。专用设置页编辑默认调用方式；多个档案和其他限制可在宿主标准插件配置编辑器中设置。
+
+| 字段 | 默认值 | 含义 |
+| --- | --- | --- |
+| `enabled` | `true` | 是否允许模型调用与工具执行 |
+| `provider` | `typesafe` | 内置提供商 ID 或档案 ID |
+| `model` | 提供商默认值 | 模型 ID；native 模式必填 |
+| `nativeProvider` | 无 | 已注册的 DSH 提供商 ID |
+| `reasoningEffort` | 提供商默认值 | 仅 native 模式使用，选项来自模型目录 |
+| `baseUrl` | 无 | custom 模式完整请求 URL |
+| `credential` | 提供商默认值 | 凭据引用名称，不是密钥值 |
+| `profiles` | `[]` | 档案数组，字段见下例 |
+| `timeoutMs` | `60000` | 整次模型请求的超时，包含重试和读取响应 |
+| `maxStateChars` | `40000` | 最大输入字符数 |
+| `maxQuestions` | `200` | 每次最多问题数，提供商的更低限制优先 |
+| `maxOutputTokens` | `2048` | native 模式输出 token 上限 |
+| `maxOutputBytes` | `1048576` | native 模式流内容计数上限，包含推理和文本事件；完整 JSON 另有 1 MiB 上限 |
+| `dataDir` | `<DSH_HOME>/dsh-jev` | 用量记录目录，未设置 DSH_HOME 时使用 `~/.dsh/dsh-jev` |
+| `dailyCallLimit` | `500` | 每个本地自然日的调用上限，`0` 表示禁用 |
+| `dailyTokenLimit` | `5000000` | 每个本地自然日的输入 token 上限，`0` 表示禁用 |
+
+档案示例不含密钥：
+
+```yaml
+profiles:
+  - id: shared-router
+    name: 共享决策路由
+    provider: custom
+    baseUrl: https://router.example/v1/systemone
+    model: jev-latest
+    credential: JEV_API_KEY
+  - id: ordinary-model
+    name: 普通模型决策
+    provider: native
+    nativeProvider: your-dsh-provider-id
+    model: your-model-id
+```
+
+调用时用 `provider: 'shared-router'` 或 `provider: 'ordinary-model'` 选择档案。不传时沿用已保存的默认配置。
+
+## 用量与错误处理
+
+每次实际调用的成功或失败均写入 `dataDir/ledger.jsonl`，设置页显示今日调用、输入 token、失败次数与费用估算。专用服务按已有费率估算；native 模型不套用 Jev 单价，实际费用由 DSH 提供商决定。混合使用时，页面金额不能代表全部提供商的账单。
+
+达到每日限制时拒绝新调用。记录目录不可写时，用量记录仅保留在内存。超时、取消、远端错误及协议错误交给调用方处理，不自动执行业务降级。System One 路径对临时网络错误、HTTP 429 和 5xx 按已有退避策略重试，受整次调用超时约束；401、403 和其他不可重试错误直接报告。
+
+设置桥接只接受本机回环来源的 POST 请求。第三方服务、宿主和调用方提供的错误信息可能保留原语言；插件自身的界面与校验错误使用中文。
+
+## 安装与验证
+
+从此 fork 构建本地包：
 
 ```sh
 npm install --ignore-scripts
 npm test
 npm pack
-dsh plugin --profile web add /absolute/path/dsh-jev-plugin-0.3.1.tgz
 ```
 
-Task state, request timing, business validation, fallback, routing, sessions,
-execution and interconnect remain the caller's responsibility. The call ledger
-records invocation usage only. Native-model charges follow the DSH provider's
-billing; the upstream JEV cost estimate does not price them.
+检查生成的包后，可由你选择安装到宿主：
 
-[Upstream attribution and pinned revision](UPSTREAM.md). The original MIT
-copyright and license are preserved. The documentation below describes the
-upstream plugin and its historical benchmarks; those benchmarks do not measure
-this fork's ordinary-model path.
-
----
-
-# dsh-jev-plugin
-
-Ask [Jev](https://typesafe.ai), a System One decision model, typed questions from
-DeepSeek Harness and get structured answers with probabilities.
-
-Jev returns **judgements, not prose**: every question is evaluated in parallel
-against the same block of text, so a request carrying 50 questions costs about
-the same and takes about as long as one carrying 1. That makes it a good fit for
-the judgements a coding agent has to repeat over many items — log lines, tool
-outputs, failing tests, search results, candidate files, review comments —
-without pulling them all into the model's context or spawning a subagent to read
-them.
-
-Measured against the two things the harness does today, on the same task and the
-same data: **13x faster and 13.6x cheaper than a model at identical accuracy**, and
-**105x faster and ~120x cheaper than a subagent** (median subagent: 9 requests,
-48 s, $0.035). It *loses* to `grep` whenever the criterion is mechanical, so do
-not use it for that. The full evidence — including the use cases that were
-measured and then rejected — is in [`docs/MEASUREMENTS.md`](docs/MEASUREMENTS.md).
-What this plugin deliberately refuses to do, and the measurement behind each
-refusal, is in [`docs/DECISIONS.md`](docs/DECISIONS.md).
-
-## What it registers
-
-| Surface | What it does |
-| --- | --- |
-| The `jev` tool | Sends `state` + `questions` and returns the typed answers, probabilities and confidence. |
-| Settings → **JEV** | Per-user provider choice, model override, custom endpoint, API key, and a **Test connection** button. |
-
-## Install
-
-The package carries its own bundle patch, so installing it is one command.
-`dsh plugin` forwards to pnpm, so a local path, a git spec and a registry name
-all work:
-
-```bash
-dsh plugin --profile web add /path/to/dsh-jev-plugin         # a local checkout
-dsh plugin --profile web add github:RaulLazaro/dsh-jev-plugin  # straight from GitHub
-dsh plugin --profile web add dsh-jev-plugin              # from the registry, once published
+```sh
+dsh plugin --profile web add /absolute/path/dsh-jev-plugin-0.3.5.tgz
 ```
 
-That adds the dependency, appends `dsh-jev-plugin` to the profile's bundle list, and
-composes the row from [`cordis.patch.yml`](cordis.patch.yml). Confirm the
-composition without booting anything:
+此命令会修改对应宿主 profile；运行中的宿主需要在方便时重启才会加载新包。此仓库的修改和测试不会自动安装、升级或重启默认宿主。不要把上游 npm 包误认为此 fork 的工作分支。
 
-```bash
-dsh --profile web --dump-config | grep -A4 'dsh-jev-plugin'
-# - id: jev
-#   name: dsh-jev-plugin
-#   config:
-#     enabled: true
-#     provider: typesafe
-```
+测试覆盖两条路径的成功、坏 JSON、重复字段、缺失答案、类型不匹配、完整概率、数值范围、取消、超时、卸载、目录、凭据选择、用量与客户端注册。可设置 `JEV_DSH_HOST_ROOT` 指向隔离安装的 DSH 0.2.1-rc.2，再运行 `node --test test/host-compat.test.mjs`，检查真实 DSH llm 服务与离线适配器的集成，不需要真实模型凭据。
 
-Then **restart the harness** to mount it — a running process does not pick up a
-new bundle row. Nothing else is required: the API key is entered in the UI, not
-in the composition.
-
-To remove it again: `dsh plugin --profile web remove dsh-jev-plugin`.
-
-## Configure
-
-Open **Settings → JEV**.
-
-1. **Provider** — where Jev is served from (see below).
-2. **Model override** — optional; empty means the provider's default.
-3. **Base URL** — only for the *Custom* provider.
-4. **API key** — stored in the DSH **credentials store**, never in
-   `settings.yaml`. The field shows whether a key is already configured.
-5. **Test connection** — performs one real round trip and reports the resolved
-   provider, model, latency, input tokens and the answers.
-
-### Providers
-
-| Provider | Endpoint | Default model | Credential / env fallback |
-| --- | --- | --- | --- |
-| TypeSafe (direct) | `https://api.typesafe.ai/v1/systemone` | `jev-latest` | `TYPESAFE_API_KEY` |
-| Vercel AI Gateway | `https://ai-gateway.vercel.sh/typesafe/v1/systemone` | `typesafe-ai/jev` | `AI_GATEWAY_API_KEY` |
-| Laya Studio | `https://api.laya.studio/v1/systemone` | *auto-routed* | `LAYA_API_KEY` |
-| OpenCode Zen | `https://opencode.ai/zen/v1/systemone` | `jev-1.13` | `OPENCODE_ZEN_API_KEY` |
-| Custom | your own URL | `jev-latest` | `JEV_API_KEY` |
-
-Each provider has its own key, so switching provider switches which credential is
-used. If you already exported the matching environment variable, no key needs to
-be saved.
-
-**Laya Studio** is a different model — [Laya](https://github.com/NandhaKishorM/laya),
-an open-source (Apache-2.0) System One encoder — served by an independent host over the
-same `/v1/systemone` wire. Same question types, same answer shape, ~30% lower input price
-($0.0294 vs $0.042 per 1M tokens). The plugin applies its published bounds for you
-(32 questions per request, 64 options per question) and prices the ledger at its own rate.
-Know what you are trading: Laya reads only the first **512 tokens** (English) or **1,024**
-(multilingual) of the state per question and truncates the rest silently — put the decisive
-text first; it degrades on large label sets (published: 0.425 on Banking77 where Jev holds
-0.870, so keep choices under ~20 options); and its `confidence` uses a different formula
-(normalised entropy), so a threshold tuned against Jev does not carry over. Send `model`
-empty (the default) and its router picks a checkpoint; pin `english`, `multilingual` or
-`typed-decisions` only deliberately.
-
-Every provider speaks the same contract, so **a self-hosted Laya works too**: point
-*Custom* at your own server (e.g. `laya-serve`, `ollaya` or `laya-server`, all
-Jev-compatible) at `http://127.0.0.1:<port>/v1/systemone` with any key. A 421M encoder fits
-on a small CPU-only VPS — expect roughly a second per request on 2 vCPUs rather than the
-32–40 ms a T4 GPU gives.
-
-> **Evaluation is not served through the OpenAI- or Anthropic-compatible
-> endpoints.** Both providers above expose a TypeSafe-compatible
-> `POST …/v1/systemone`; a custom endpoint must implement the same contract.
-
-## Using the tool
-
-```jsonc
-{
-  "state": "### ITEM 1\nTypeError: x is undefined\n\n### ITEM 2\nAll 42 tests passed in 1.2s",
-  "questions": {
-    "item1_failed": { "type": "noul",   "instructions": "Does ITEM 1 report a failure?" },
-    "item2_failed": { "type": "noul",   "instructions": "Does ITEM 2 report a failure?" },
-    "worst": {
-      "type": "choice",
-      "instructions": "Which item is the failure?",
-      "criteria": { "item1": "a code exception", "item2": "a passing run" }
-    }
-  }
-}
-```
-
-| Question type | Answer |
-| --- | --- |
-| `noul` | `noul` — the probability of *yes*, 0–1 |
-| `choice` | `choice`, `probabilities`, `confidence` |
-| `score` | `score` (an ordered rubric, may fall between rungs), `probabilities`, `confidence` |
-
-**Ask atomic questions.** Reference each item by a stable label (`### ITEM 7`)
-and ask one question per item; a question about a whole document invites a guess.
-Instructions and criteria are written in English; the state may be in any
-language.
-
-**Read the probabilities, not just the pick.** A flat distribution means it is
-guessing; `confidence` between roughly 0.4 and 0.6 on a `noul` carries little
-information. Measure `confidence` against your own workload before gating an
-action on it — it is a statistic derived from the distribution, not a guarantee.
-
-### When not to use it
-
-- Writing, summarising, translating or reformatting text — it cannot generate.
-- Exact string or arithmetic work — it is not a regex engine or a calculator.
-- Anything needing extended multi-step reasoning — decompose into atomic
-  questions and combine the answers in code instead.
-
-## Configuration reference
-
-The `jev` settings namespace accepts:
-
-| Field | Default | Meaning |
-| --- | --- | --- |
-| `enabled` | `true` | Register the `jev` tool. |
-| `provider` | `typesafe` | `typesafe`, `vercel-gateway`, `laya-studio` or `custom`. |
-| `model` | *(provider default)* | Model id override. |
-| `baseUrl` | — | Required by the `custom` provider. |
-| `timeoutMs` | `60000` | Per-attempt request deadline. |
-| `maxStateChars` | `40000` | Rejects oversized `state` with a message naming the limit. |
-| `maxQuestions` | `200` | Rejects oversized question maps — the provider's own limit wins when it is lower (Laya Studio: 32). |
-| `dataDir` | `<DSH_HOME>/dsh-jev` | Where the judgment ledger lives. |
-| `dailyCallLimit` | `500` | Judgments per local day; `0` disables the cap. |
-| `dailyTokenLimit` | `5000000` | Input tokens per local day; `0` disables the cap. |
-
-Provider, model and limit fields can also be set directly in
-`~/.dsh/settings.yaml`; the API key cannot, by design.
-
-## Spend, and the ledger behind it
-
-A Jev call is not free and, without a record, it is invisible. Measured on real
-traffic: **11,377 input tokens for a single judgment**, in a turn that can
-present 27 oversized results. Input is billed at $0.042 per million tokens and
-output is free, so cumulative input tokens *is* the cost.
-
-Every call — including a failed one — is appended to a JSONL ledger under
-`dataDir`, and the Settings card shows the running total for the local day:
-
-```
-Today · 42 judgments · 318,904 input tokens · $0.0134
-```
-
-Two caps read that ledger before each request. They exist because the failure
-mode of a metered feature is not an error, it is a surprise:
-
-- `dailyCallLimit` (default 500)
-- `dailyTokenLimit` (default 5,000,000 input tokens)
-
-Exceeding either refuses the call **before** anything is spent, with a message
-naming the number reached and the setting to raise. A cap of `0` means no cap.
-The ledger never blocks a judgment: if its directory cannot be prepared, it
-degrades to memory-only for that run rather than failing the call.
-
-Nothing here thresholds on a probability. Jev's numbers are measured to be
-**uncalibrated** — accuracy by confidence band came out 33% / 25% / 67% / 57%,
-including two wrong answers at 0.85 and 0.96 confidence — so they are safe to
-sort by and not to compare against a fixed number. See
-[`docs/DECISIONS.md`](docs/DECISIONS.md) for what that rules out.
-
-## Operational notes
-
-- **The upstream answers `429` under load** ("the upstream provider is currently
-  experiencing high demand"). The plugin retries with a 1s → 25s backoff and
-  honours `Retry-After`; expect occasional slow calls and do not treat a retry as
-  a failure.
-- A rejected credential (401/403) is reported with a pointer to
-  Settings → Jev rather than a raw status code.
-- The Settings bridge is same-origin and **loopback-only**.
-
-## Verify it works
-
-After the restart, in order:
-
-1. **The card is there.** Settings → **JEV** should appear with a
-   `key set` / `no key` badge.
-2. **The key round-trips.** Pick the provider, paste the key, **Save key**, then
-   **Test connection**. You get the resolved provider, model, latency, input
-   tokens and a couple of answers from a real request.
-3. **The tool is registered.** Ask the session to call `jev` on something small,
-   e.g.:
-
-   ```jsonc
-   {
-     "state": "### ITEM 1\nTypeError: x is undefined\n\n### ITEM 2\nAll 42 tests passed",
-     "questions": {
-       "item1_failed": { "type": "noul", "instructions": "Does ITEM 1 report a failure?" },
-       "worst": { "type": "choice", "instructions": "Which item failed?",
-                  "criteria": { "item1": "an exception", "item2": "a passing run" } }
-     }
-   }
-   ```
-
-   Expected: `item1_failed: 0.9x (yes)`, `item2` near `0.0x`, and `worst: item1`.
-4. **A misconfiguration fails usefully.** Switch to *Custom* with an empty base
-   URL: the tool must answer with a message naming Settings → Jev, not a raw
-   status code.
-5. **The bridge stays closed.** `curl -X POST http://your-host:3080/api/dsh-jev-settings/describe`
-   from another machine must answer `403 loopback requests only`.
-
-## Development
-
-```bash
-npm test          # node --test
-```
-
-The suite covers endpoint resolution, question validation messages, answer
-formatting, key precedence and the retry policy, plus the tool's own wiring:
-that it reads the credentials service through the lazy accessor on every call
-rather than capturing it once at registration. `lib/index.js` imports nothing
-but `@deepseek-ai/schemastery`, declared as a peer dependency along with
-`@deepseek-ai/cordis` — the host supplies both.
-
-## Licence
-
-MIT.
+[上游历史设计记录](docs/DECISIONS.md)与[历史测量记录](docs/MEASUREMENTS.md)保留原始英文资料。这些记录不构成本 fork 普通模型路径的性能或准确率验证。

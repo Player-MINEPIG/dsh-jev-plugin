@@ -1,8 +1,16 @@
-Fork of https://github.com/RaulLazaro/dsh-jev-plugin at revision
-`0c2dd315a7e4ba85cad638c041985941f088487c` (0.2.1).
-MIT license and original copyright retained in LICENSE.
+# 上游来源与 fork 差异
 
-Changes: shared decisionModels service and type declarations; common tool/probe/service
-call implementation; prompt cancellation and unload; strict JSON protocol parsing;
-optional existing DSH model calls; provider/model profiles. No business decisions,
-task records, sessions, authorization, or caller fallback policy live here.
+上游为 [RaulLazaro/dsh-jev-plugin](https://github.com/RaulLazaro/dsh-jev-plugin)。本 fork 的共同基线为 `0c2dd315a7e4ba85cad638c041985941f088487c`（0.2.1）。保留 LICENSE 中的 MIT 许可证和原始版权声明。
+
+本轮在用户 fork 的 `master@d0d8ab8` 上继续修改，保留已有共享服务、档案、DSH 模型目录、推理强度选择、设置持久化和按所选提供商保存凭据的能力。核对时上游 master 为 `fcf3dc820464df899e9db3147542045637038e97`；用户 fork 相对它有 5 个独立提交，上游有 11 个独立提交。本轮未合并上游 master 或其发布流程。
+
+相对共同基线，此 fork 提供：
+
+- `ctx.decisionModels.ask()` 共享服务和类型声明，工具、连接测试与外部插件复用同一实现。
+- `native` 模式复用 DSH `llm.prepareCall()`、适配器和凭据，普通模型通过提示词返回相同结构的 JSON 答案。
+- 提供商档案、模型目录及推理强度选择。
+- 超时、调用取消、卸载中止与严格 JSON 解析。
+- 中文设置界面、帮助、状态、校验与插件自身错误。
+- 按请求问题核对答案 ID 和类型，拒绝不完整或无效的 choice 概率，不补造概率。
+
+任务记录、会话、业务决策、授权、阈值、路由、降级策略和执行仍归调用方管理。普通模型的概率为自报估计，不是真实 token 概率或经过校准的置信度。历史英文设计与测量资料保留供追溯，不代表本 fork 新路径的质量或性能。

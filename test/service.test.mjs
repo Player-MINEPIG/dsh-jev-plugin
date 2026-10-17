@@ -5,7 +5,7 @@ import { Context } from '@deepseek-ai/cordis'
 import { DecisionModels, createDecisionCaller, callJev, makeTool, apply, makeBridgeRoutes } from '../lib/index.js'
 const questions = {q:{type:'choice',instructions:'Choose one',criteria:{a:'A',b:'B'}}}
 const request = {state:'Background supplied by consumer',questions}
-const reply = {model:'response-model',answers:{q:{type:'choice',choice:'a'}},usage:{input_tokens:3,output_tokens:1}}
+const reply = {model:'response-model',answers:{q:{type:'choice',choice:'a',probabilities:{a:0.8,b:0.2}}},usage:{input_tokens:3,output_tokens:1}}
 function service(config, extras={}) {
   const ctx=new Context()
   const call=createDecisionCaller(()=>({resolve:async()=>({value:'fixture-key'})}),()=>config,undefined,()=>extras.llm)
@@ -46,16 +46,16 @@ test('Jev tool and shared ask use the same caller',async t=>{
   assert.equal(result.provider,'custom'); assert.match(result.text,/q: a/)
 })
 
-test('protocol failures reject while business candidate validity is left to consumers',async t=>{
+test('protocol failures and unlisted candidates reject',async t=>{
   const f=service({provider:'custom',baseUrl:'http://fixture'})
   t.after(()=>f.ctx.fiber.dispose())
   let body
   t.mock.method(globalThis,'fetch',async()=>new Response(body))
   for(const invalid of ['plain text','{"answers":{},"answers":{}}','{}','{"answers":{"q":{"type":"choice","choice":4}}}']){
-    body=invalid; await assert.rejects(f.value.ask(request),/JSON|protocol/)
+    body=invalid; await assert.rejects(f.value.ask(request),/JSON|协议/)
   }
   body=JSON.stringify({answers:{q:{type:'choice',choice:'unlisted'}}})
-  assert.equal((await f.value.ask(request)).answers.q.choice,'unlisted')
+  await assert.rejects(f.value.ask(request), /choice/)
 })
 
 test('pre-aborted calls never reach transport and cancellation is prompt during retry backoff',async t=>{
@@ -83,7 +83,7 @@ test('unload cancels pending calls and removes the service',async t=>{
   const f=service({provider:'custom',baseUrl:'http://fixture'})
   t.mock.method(globalThis,'fetch',()=>new Promise(()=>{}))
   const pending=f.value.ask(request)
-  const rejected=assert.rejects(pending,/unloaded/)
+  const rejected=assert.rejects(pending,/已卸载/)
   await f.ctx.fiber.dispose();await rejected
   assert.equal(f.ctx.get('decisionModels'),undefined);assert.equal(f.value.activeCount,0)
 })
@@ -108,7 +108,7 @@ test('connection test uses shared ask and the plugin mounts before optional tool
   let requests=0; const routes=[]
   ctx.provide('settings',{installSection(_owner,_ns,_schema,config,handlers){handlers.setSource(()=>config)}})
   ctx.provide('webServer',{register(route){routes.push(route);return ()=>{}}})
-  t.mock.method(globalThis,'fetch',async()=>{requests++;return new Response(JSON.stringify({answers:{passed:{type:'noul',noul:0},severity:{type:'choice',choice:'fatal'}}}))})
+  t.mock.method(globalThis,'fetch',async(_url,init)=>{requests++;return new Response(JSON.stringify(JSON.parse(init.body).questions.q ? reply : {answers:{passed:{type:'noul',noul:0},severity:{type:'choice',choice:'fatal',probabilities:{none:0,fatal:1}}}}))})
   ctx.provide('credentials',{resolve:async()=>({value:'fixture-key'})})
   await ctx.plugin({name:'jev-service-test',apply},{provider:'custom',baseUrl:'http://fixture',dataDir:'/private/tmp/jev-service-test-ledger'})
   assert.ok(ctx.get('decisionModels'))
@@ -163,7 +163,7 @@ test('catalog retains bridge access restrictions and rejects malformed provider 
   assert.equal((await catalogBridge(llm,{provider:42})).status,400);assert.equal(read,false);
 });
 test('missing or failed catalog reports availability without exposing provider errors',async()=>{
-  const missing=await catalogBridge(undefined);assert.equal(missing.ok,false);assert.match(missing.message,/service unavailable/);
+  const missing=await catalogBridge(undefined);assert.equal(missing.ok,false);assert.match(missing.message,/服务不可用/);
   const result=await catalogBridge({listProviders:()=>{throw Error('private transport detail')}});
   assert.equal(result.ok,false);assert.doesNotMatch(result.message,/private transport/);
 });

@@ -44,12 +44,12 @@ test('resolveEndpoint honours a model override but keeps the provider model othe
 
 test('resolveEndpoint rejects an unknown provider with a usable message', () => {
   const result = resolveEndpoint({ provider: 'nope' })
-  assert.match(result.error, /unknown provider "nope"/)
+  assert.match(result.error, /未知提供商“nope”/)
   assert.match(result.error, /typesafe/)
 })
 
 test('resolveEndpoint requires a usable URL for the custom provider', () => {
-  assert.match(resolveEndpoint({ provider: 'custom' }).error, /needs a base URL/)
+  assert.match(resolveEndpoint({ provider: 'custom' }).error, /需要完整请求 URL/)
   assert.match(resolveEndpoint({ provider: 'custom', baseUrl: 'ftp://x' }).error, /http/)
   assert.equal(
     resolveEndpoint({ provider: 'custom', baseUrl: 'https://jev.internal/v1/systemone' }).url,
@@ -72,22 +72,22 @@ test('validateQuestions normalises each question type', () => {
 test('validateQuestions names the offending path', () => {
   assert.throws(() => validateQuestions({ q: { type: 'boolean', instructions: 'x' } }), /questions\.q\.type/)
   assert.throws(() => validateQuestions({ q: { type: 'noul' } }), /questions\.q\.instructions/)
-  assert.throws(() => validateQuestions({ q: { type: 'choice', instructions: 'x' } }), /criteria must be an object/)
+  assert.throws(() => validateQuestions({ q: { type: 'choice', instructions: 'x' } }), /criteria 必须是 choice/)
   assert.throws(
     () => validateQuestions({ q: { type: 'choice', instructions: 'x', criteria: { only: 'one' } } }),
-    /at least two options/,
+    /至少需要两个选项/,
   )
   assert.throws(
     () => validateQuestions({ q: { type: 'score', instructions: 'x', criteria: ['only'] } }),
-    /at least two ordered labels/,
+    /至少两个有序等级/,
   )
 })
 
 test('validateQuestions rejects an empty, non-object or oversized map', () => {
-  assert.throws(() => validateQuestions({}), /at least one question/)
-  assert.throws(() => validateQuestions(null), /must be an object/)
-  assert.throws(() => validateQuestions([]), /must be an object/)
-  assert.throws(() => validateQuestions({ a: {}, b: {} }, 1), /too many questions \(2\)/)
+  assert.throws(() => validateQuestions({}), /至少需要一个问题/)
+  assert.throws(() => validateQuestions(null), /必须是对象/)
+  assert.throws(() => validateQuestions([]), /必须是对象/)
+  assert.throws(() => validateQuestions({ a: {}, b: {} }, 1), /问题过多（2 个）/)
 })
 
 test('formatAnswers renders every answer type and a usage footer', () => {
@@ -103,20 +103,20 @@ test('formatAnswers renders every answer type and a usage footer', () => {
     },
     ['n', 'c', 's'],
   )
-  assert.match(text, /^n: 0\.9 \(yes\)/m)
-  assert.match(text, /^c: billing \| confidence 0\.31/m)
-  assert.match(text, /^s: 2\.5 \| confidence 0\.8/m)
-  assert.match(text, /3 questions \| 434 input tokens \| model typesafe-ai\/jev/)
+  assert.match(text, /^n: 0\.9（是）/m)
+  assert.match(text, /^c: billing \| 置信度 0\.31/m)
+  assert.match(text, /^s: 2\.5 \| 置信度 0\.8/m)
+  assert.match(text, /3 个问题 \| 434 个输入 token \| 模型 typesafe-ai\/jev/)
 })
 
 test('formatAnswers reports a missing answer instead of dropping it', () => {
   const text = formatAnswers({ answers: {} }, ['gone'])
-  assert.match(text, /^gone: \(no answer\)/m)
+  assert.match(text, /^gone: （无答案）/m)
 })
 
 test('formatAnswers accepts the gateway camelCase usage field', () => {
   const text = formatAnswers({ answers: {}, usage: { inputTokens: 12 } }, [])
-  assert.match(text, /12 input tokens/)
+  assert.match(text, /12 个输入 token/)
 })
 
 test('resolveApiKey prefers the credentials store, then settings, then the environment', async () => {
@@ -188,12 +188,12 @@ test('the jev tool reads the credentials service lazily, per call', async () => 
     () => ({ provider: 'typesafe' }),
   )
   await withFetchStub(
-    async () => new Response(JSON.stringify({ answers: {} }), { status: 200 }),
+    async () => new Response(JSON.stringify({ answers: { q: {type: 'noul', noul: 1} } }), { status: 200 }),
     async () => {
       // The service has not mounted yet: the call must fail loudly, not silently.
       await assert.rejects(
         tool.execute({ state: 's', questions: { q: { type: 'noul', instructions: 'x' } } }),
-        /no API key/,
+        /未配置 API 密钥/,
       )
       // It mounts afterwards (cross-bundle order): the next call must see it.
       service = { resolve: async () => ({ value: 'late' }) }
@@ -213,7 +213,7 @@ test('the jev tool still reports a genuinely missing key', async () => {
   )
   await assert.rejects(
     tool.execute({ state: 's', questions: { q: { type: 'noul', instructions: 'x' } } }),
-    /no API key for provider "typesafe"/,
+    /提供商“typesafe”未配置 API 密钥/,
   )
   if (saved === undefined) delete process.env.TYPESAFE_API_KEY
   else process.env.TYPESAFE_API_KEY = saved
@@ -226,7 +226,7 @@ test('the jev tool refuses a disabled tool and an oversized state', async () => 
   )
   await assert.rejects(
     disabled.execute({ state: 's', questions: { q: { type: 'noul', instructions: 'x' } } }),
-    /disabled in Settings/,
+    /设置.*禁用/,
   )
   const tool = makeTool(
     () => undefined,
@@ -234,7 +234,7 @@ test('the jev tool refuses a disabled tool and an oversized state', async () => 
   )
   await assert.rejects(
     tool.execute({ state: 'too long', questions: { q: { type: 'noul', instructions: 'x' } } }),
-    /this plugin allows 3/,
+    /本插件最多允许 3/,
   )
 })
 
@@ -311,7 +311,7 @@ test('callJev explains a rejected credential in terms the model can relay', asyn
       questions: { q: { type: 'noul', instructions: 'x' } },
       fetchImpl,
     }),
-    /Settings → Jev/,
+    /设置 → JEV 决策/,
   )
 })
 
@@ -417,8 +417,8 @@ test('validateQuestions caps options per question and names the bound', () => {
   // Exactly at the cap passes; one over it is refused by name.
   assert.equal(validateQuestions(make(64), 200, 64).q.type, 'choice')
   assert.throws(
-    () => validateQuestions(make(65), 200, 64, 'the laya-studio provider'),
-    /questions\.q\.criteria has 65 options; the laya-studio provider allows 64/,
+    () => validateQuestions(make(65), 200, 64, 'laya-studio 提供商'),
+    /questions\.q\.criteria 有 65 个选项；laya-studio 提供商 最多允许 64/,
   )
 })
 
@@ -435,7 +435,7 @@ test('the tool applies the provider question cap before any request', async () =
     for (let i = 0; i < 33; i++) questions[`q${i}`] = { type: 'noul', instructions: 'x' }
     await assert.rejects(
       tool.execute({ state: 's', questions }),
-      /too many questions \(33\); the laya-studio provider allows 32/,
+      /问题过多（33 个）；laya-studio 提供商 最多允许 32/,
     )
     assert.equal(called, 0, 'a request the provider would reject must not leave')
   } finally {

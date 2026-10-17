@@ -1,7 +1,7 @@
 import type { Context } from '@deepseek-ai/cordis';
 import { Service } from '@deepseek-ai/cordis';
 export type Question = {type:'choice';instructions:string;criteria:Record<string,string|null>} | {type:'noul';instructions:string;criteria?:{true:string;false:string}} | {type:'score';instructions:string;criteria:string[]};
-/** Values are protocol parsed. Consumers validate candidates and business semantics. */
+/** 校验问题 ID、类型及 choice 完整概率；业务规则归调用方。native 概率为模型自报估计。 */
 export interface Answer {type:string; [field:string]: unknown}
 export interface AskRequest {provider?:string;model?:string;reasoningEffort?:string;state:string;questions:Record<string,Question>}
 export interface AskResult {provider:string;model:string;answers:Record<string,Answer>;usage?:{input_tokens?:number;output_tokens?:number;[field:string]:unknown}}
