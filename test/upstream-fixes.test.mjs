@@ -18,6 +18,7 @@ function fixtureEnvironment(t, value) {
 
 function dependencies(overrides = {}) {
   return {
+    getConnection: () => ({admit: () => ({peer: {principal: {kind: 'owner'}}})}),
     getConfig: () => ({provider: 'custom', baseUrl: 'http://fixture/v1/systemone', credential}),
     getSettings: () => ({describe: () => [{ns: 'jev', revision: 1}], mutate: async () => {}}),
     getCredentials: () => ({describe: async () => ({configured: false}), set: async () => {}, unset: async () => {}}),
@@ -32,7 +33,7 @@ async function bridge(path, deps, {address = '127.0.0.1', method = 'POST', body 
   const route = makeBridgeRoutes(deps).find(row => row.path.endsWith('/' + path))
   assert.ok(route)
   const req = streamError ? Readable.from((async function* () {throw Error('fixture request failure')})()) : Readable.from([Buffer.from(JSON.stringify(body))])
-  req.method = method; req.socket = {remoteAddress: address}
+  req.headers = {'content-type': 'application/json'}; req.method = method; req.socket = {remoteAddress: address}
   let status, headers, result, writes = 0
   await route.handler(req, {writeHead(code, value) {status = code; headers = value}, end(value) {writes++; result = JSON.parse(value)}})
   assert.equal(writes, 1)
@@ -100,9 +101,9 @@ test('all eight bridge routes preserve guard order and never touch dependencies 
   const fail = () => {throw Error('guard touched a dependency')}
   const deps = Object.fromEntries(Object.keys(dependencies()).map(key => [key, fail]))
   for (const path of paths) {
-    const remote = await bridge(path, deps, {address: '203.0.113.1', method: 'GET'})
+    const remote = await bridge(path, {...deps, getConnection: () => ({admit: () => ({rejection: 403})})}, {address: '203.0.113.1', method: 'GET'})
     assert.equal(remote.status, 403); assert.equal(remote.code, 'forbidden')
-    const get = await bridge(path, deps, {method: 'GET'})
+    const get = await bridge(path, {...deps, getConnection: dependencies().getConnection}, {method: 'GET'})
     assert.equal(get.status, 405); assert.equal(get.code, 'method-not-allowed')
   }
 })
@@ -127,7 +128,7 @@ test('bridge never writes a second response after the response has already ended
     writeHead() {this.headersSent = true},
     end() {this.writes++; this.writableEnded = true; throw Error('fixture already sent')},
   }
-  await route.handler({method: 'POST', socket: {remoteAddress: '127.0.0.1'}}, res)
+  await route.handler({method: 'POST', headers: {'content-type': 'application/json'}, socket: {remoteAddress: '127.0.0.1'}}, res)
   assert.equal(res.writes, 1)
 })
 

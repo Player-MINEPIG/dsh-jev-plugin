@@ -13,7 +13,6 @@ import assert from 'node:assert/strict'
 import {
   PROVIDERS,
   formatAnswers,
-  isLoopbackRequest,
   makeTool,
   resolveEndpoint,
   resolveApiKey,
@@ -320,15 +319,6 @@ test('the retry ladder is bounded and increasing', () => {
   for (let i = 1; i < RETRY_DELAYS_MS.length; i++) {
     assert.ok(RETRY_DELAYS_MS[i] > RETRY_DELAYS_MS[i - 1])
   }
-})
-
-test('isLoopbackRequest accepts only loopback peers', () => {
-  assert.equal(isLoopbackRequest({ socket: { remoteAddress: '127.0.0.1' } }), true)
-  assert.equal(isLoopbackRequest({ socket: { remoteAddress: '::1' } }), true)
-  assert.equal(isLoopbackRequest({ socket: { remoteAddress: '::ffff:127.0.0.1' } }), true)
-  assert.equal(isLoopbackRequest({ socket: { remoteAddress: '192.0.2.10' } }), false)
-  assert.equal(isLoopbackRequest({ socket: {} }), false)
-  assert.equal(isLoopbackRequest({}), false)
 })
 
 test('every provider declares a credential name and a URL (except custom)', () => {

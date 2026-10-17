@@ -33,6 +33,7 @@ test('mounts on DSH 0.2.1-rc.2 and uses its real llm, catalog, stream and cancel
   }
   ctx.llm.registerAdapter(['offline'], new Offline())
   ctx.provide('settings', {installSection(_ctx, _ns, _schema, cfg, handlers) {handlers.setSource(() => cfg)}})
+  ctx.provide('connection', {admit: () => ({peer: {principal: {kind: 'owner'}}})})
   ctx.provide('webServer', {register(route) {routes.push(route); return () => {}}})
   await ctx.plugin(plugin, {provider: 'ordinary-profile', dataDir: directory, profiles: [{id: 'ordinary-profile', provider: 'native', nativeProvider: 'offline', model: 'ordinary', reasoningEffort: 'low'}]})
   await new Promise(resolve => setImmediate(resolve))
@@ -47,7 +48,7 @@ test('mounts on DSH 0.2.1-rc.2 and uses its real llm, catalog, stream and cancel
   assert.equal((await ctx.llm.listModels('offline'))[0].id, 'ordinary')
   assert.equal((await ctx.llm.resolveModelInfo('offline', 'ordinary')).id, 'ordinary')
   const route = routes.find(row => row.path.endsWith('/catalog'))
-  const req = Readable.from([Buffer.from('{"provider":"offline"}')]); req.method = 'POST'; req.socket = {remoteAddress: '127.0.0.1'}
+  const req = Readable.from([Buffer.from('{"provider":"offline"}')]); req.headers = {'content-type': 'application/json'}; req.method = 'POST'; req.socket = {remoteAddress: '127.0.0.1'}
   let catalog
   await route.handler(req, {writeHead() {}, end(body) {catalog = JSON.parse(body)}})
   assert.equal(catalog.ok, true)

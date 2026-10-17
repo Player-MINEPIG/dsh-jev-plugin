@@ -107,6 +107,7 @@ test('connection test uses shared ask and the plugin mounts before optional tool
   const ctx=new Context();t.after(()=>ctx.fiber.dispose())
   let requests=0; const routes=[]
   ctx.provide('settings',{installSection(_owner,_ns,_schema,config,handlers){handlers.setSource(()=>config)}})
+  ctx.provide('connection',{admit: () => ({peer: {principal: {kind: 'owner'}}})})
   ctx.provide('webServer',{register(route){routes.push(route);return ()=>{}}})
   t.mock.method(globalThis,'fetch',async(_url,init)=>{requests++;return new Response(JSON.stringify(JSON.parse(init.body).questions.q ? reply : {answers:{passed:{type:'noul',noul:0},severity:{type:'choice',choice:'fatal',probabilities:{none:0,fatal:1}}}}))})
   ctx.provide('credentials',{resolve:async()=>({value:'fixture-key'})})
@@ -117,7 +118,7 @@ test('connection test uses shared ask and the plugin mounts before optional tool
   assert.equal(ctx.get('tools'),undefined)
   await new Promise(resolve=>setImmediate(resolve))
   const route=routes.find(r=>r.path.endsWith('/test'));assert.ok(route)
-  let output;await route.handler({method:'POST',socket:{remoteAddress:'127.0.0.1'}},{writeHead(){},end(body){output=JSON.parse(body)}})
+  let output;await route.handler({method:'POST',headers:{'content-type':'application/json'},socket:{remoteAddress:'127.0.0.1'}},{writeHead(){},end(body){output=JSON.parse(body)}})
   assert.equal(output.ok,true);assert.equal(output.value.provider,'custom');assert.equal(requests,2)
 })
 
@@ -139,9 +140,9 @@ test('provider overrides resolve the selected provider credential instead of for
   } finally {globalThis.fetch = previous}
 })
 
-async function catalogBridge(llm, body={}, address='127.0.0.1') {
-  const route=makeBridgeRoutes({getLlm:()=>llm}).find(r=>r.path.endsWith('/catalog'));
-  const req=Readable.from([Buffer.from(JSON.stringify(body))]);req.method='POST';req.socket={remoteAddress:address};
+async function catalogBridge(llm, body={}, admission={peer:{principal:{kind:'owner'}}}) {
+  const route=makeBridgeRoutes({getLlm:()=>llm,getConnection:()=>({admit:()=>admission})}).find(r=>r.path.endsWith('/catalog'));
+  const req=Readable.from([Buffer.from(JSON.stringify(body))]);req.headers={'content-type':'application/json'};req.method='POST';req.socket={remoteAddress:'100.64.0.2'};
   let status,result;const res={writeHead:code=>{status=code},end:value=>{result=JSON.parse(value)}};
   await route.handler(req,res);return {status,...result};
 }
@@ -159,7 +160,7 @@ test('settings choices use the registered DSH models and per-model reasoning met
 });
 test('catalog retains bridge access restrictions and rejects malformed provider selection',async()=>{
   let read=false;const llm={listProviders:()=>{read=true;return []}};
-  assert.equal((await catalogBridge(llm,{},'100.64.0.1')).status,403);assert.equal(read,false);
+  assert.equal((await catalogBridge(llm,{}, {rejection:401})).status,401);assert.equal(read,false);
   assert.equal((await catalogBridge(llm,{provider:42})).status,400);assert.equal(read,false);
 });
 test('missing or failed catalog reports availability without exposing provider errors',async()=>{
@@ -169,8 +170,8 @@ test('missing or failed catalog reports availability without exposing provider e
 });
 
 async function keyBridge(action,body,deps) {
-  const route=makeBridgeRoutes(deps).find(r=>r.path.endsWith('/key-'+action));
-  const req=Readable.from([Buffer.from(JSON.stringify(body))]);req.method='POST';req.socket={remoteAddress:'127.0.0.1'};
+  const route=makeBridgeRoutes({...deps,getConnection:()=>({admit:()=>({peer:{principal:{kind:'owner'}}})})}).find(r=>r.path.endsWith('/key-'+action));
+  const req=Readable.from([Buffer.from(JSON.stringify(body))]);req.headers={'content-type':'application/json'};req.method='POST';req.socket={remoteAddress:'127.0.0.1'};
   let status,result;await route.handler(req,{writeHead:code=>{status=code},end:value=>{result=JSON.parse(value)}});return {status,...result};
 }
 test('key operations target the selected provider while saved configuration remains native',async()=>{
